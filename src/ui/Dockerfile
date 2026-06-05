@@ -4,7 +4,7 @@
 # ── build ──────────────────────────────────────────────────────────────────────
 # Restore node_modules in a cache-stable layer before copying the rest of the
 # sources so a code-only change doesn't re-run npm ci.
-FROM node:22-alpine AS build
+FROM node:22-alpine@sha256:968df39aedcea65eeb078fb336ed7191baf48f972b4479711397108be0966920 AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -14,7 +14,7 @@ COPY . .
 RUN npm run build
 
 # ── runtime ────────────────────────────────────────────────────────────────────
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS runtime
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
