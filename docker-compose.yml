@@ -1,0 +1,87 @@
+name: omne-screen
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - omne
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: src/Api/Dockerfile
+    environment:
+      ConnectionStrings__OmneScreen: ${API_CONNECTION_STRING}
+    networks:
+      - omne
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # /health queries the DB — confirms schema creation + connectivity.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s   # dotnet publish image takes ~30 s to cold-start
+
+  bff:
+    build:
+      context: .
+      dockerfile: src/Bff/Dockerfile
+    environment:
+      ReverseProxy__Clusters__api-cluster__Destinations__api__Address: "http://api:8080/"
+    networks:
+      - omne
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ui:
+    build:
+      context: src/ui
+      dockerfile: Dockerfile
+    environment:
+      BFF_ORIGIN: "http://bff:8080"
+    ports:
+      - "8080:8080"
+    networks:
+      - omne
+    depends_on:
+      bff:
+        condition: service_healthy
+    healthcheck:
+      # nginx:alpine ships busybox wget; no curl in the alpine image.
+      # Use 127.0.0.1, not localhost: busybox wget resolves localhost to ::1
+      # first, but nginx only listens on IPv4 (listen 8080;) -> conn refused.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  omne:
+    driver: bridge
+
+volumes:
+  pgdata:

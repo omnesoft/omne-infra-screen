@@ -1,0 +1,20 @@
+# .NET build artifacts
+**/bin/
+**/obj/
+**/.vs/
+
+# Test projects are not needed in production images
+test/
+
+# Node artefacts (UI is built in its own stage/context)
+src/ui/node_modules/
+src/ui/dist/
+
+# VCS
+.git/
+.gitignore
+
+# Editor / OS
+.DS_Store
+**/.idea/
+**/*.user

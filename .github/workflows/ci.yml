@@ -1,0 +1,193 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least-privilege token: CI only needs to read the repo.
+permissions:
+  contents: read
+
+# Supersede in-progress runs for the same ref instead of queueing them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dotnet:
+    name: .NET build & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore Omne.Screen.sln
+
+      - name: Build
+        run: dotnet build Omne.Screen.sln --configuration Release --no-restore
+
+      - name: Test
+        run: >
+          dotnet test Omne.Screen.sln --configuration Release --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dotnet-test-results
+          path: TestResults/*.trx
+          if-no-files-found: ignore
+
+  ui:
+    name: React UI build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: src/ui
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  images:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Scoped above the workflow default (contents: read): packages:read lets
+    # Trivy pull its vuln DB from ghcr.io as an authenticated user (higher rate
+    # limit), and security-events:write lets it publish findings to the
+    # Security tab. Other jobs keep the least-privilege default.
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    # Build all three images so they share one tag per commit. The API is the
+    # core deliverable; BFF and UI ride along on the same matrix.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            context: .
+            dockerfile: src/Api/Dockerfile
+          - name: bff
+            context: .
+            dockerfile: src/Bff/Dockerfile
+          - name: ui
+            context: src/ui
+            dockerfile: src/ui/Dockerfile
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Compute image tag (branch + short SHA)
+        id: tag
+        run: |
+          # head_ref is the source branch on pull_request; ref_name is the
+          # branch on push. Slashes are illegal in Docker tags -> replace them.
+          branch="${{ github.head_ref || github.ref_name }}"
+          echo "value=${branch//\//-}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      # Authenticate to ghcr.io so Trivy's vuln-DB pulls aren't subject to the
+      # anonymous rate limit (the main source of flaky "TOOMANYREQUESTS" runs).
+      # Trivy reads these creds from ~/.docker/config.json.
+      - name: Log in to ghcr.io for Trivy DB pulls
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build ${{ matrix.name }} image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          # CI has no registry credentials yet, so build and load locally
+          # without pushing. Swap to push: true once a registry is wired up.
+          push: false
+          load: true
+          tags: omne-screen-${{ matrix.name }}:${{ steps.tag.outputs.value }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      # Record exactly what shipped in the image (CycloneDX). This is the only
+      # pass that analyses the image; the scan below reuses the SBOM. Trivy's
+      # vuln DB is cached (cache: true is the action default), so it isn't
+      # re-downloaded across the matrix.
+      - name: Generate SBOM (${{ matrix.name }})
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: omne-screen-${{ matrix.name }}:${{ steps.tag.outputs.value }}
+          format: cyclonedx
+          output: sbom-${{ matrix.name }}.cdx.json
+
+      - name: Upload SBOM (${{ matrix.name }})
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-${{ matrix.name }}
+          path: sbom-${{ matrix.name }}.cdx.json
+          if-no-files-found: warn
+
+      # Match the SBOM against the vuln DB in a single pass that both gates the
+      # job (exit-code 1 on a fixable HIGH/CRITICAL) and writes SARIF for the
+      # Security tab. ignore-unfixed keeps CI actionable — base-image CVEs with
+      # no upstream fix can't be remediated here; drop it to gate on those too.
+      # Trivy writes the SARIF before exiting non-zero, so the upload (always())
+      # still publishes results on failure.
+      - name: Scan SBOM for vulnerabilities (${{ matrix.name }})
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: sbom
+          scan-ref: sbom-${{ matrix.name }}.cdx.json
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+          severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Upload scan results to Security tab (${{ matrix.name }})
+        if: always()
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          # Distinct category per image so the three SARIFs don't overwrite
+          # each other in the Security tab.
+          category: trivy-${{ matrix.name }}
+
+      # Keep the raw scan report downloadable too (Security tab aside), so a
+      # failed gate can be triaged from the run's artifacts. always() ensures
+      # it's uploaded even when the scan step exits non-zero.
+      - name: Upload scan report (${{ matrix.name }})
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-report-${{ matrix.name }}
+          path: trivy-${{ matrix.name }}.sarif
+          if-no-files-found: warn
