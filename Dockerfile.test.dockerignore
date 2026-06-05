@@ -1,0 +1,22 @@
+# Per-Dockerfile ignore for Dockerfile.test (BuildKit prefers this over the
+# root .dockerignore when building with `-f Dockerfile.test`). Unlike the
+# production images, the test build *needs* the test/ directory in context, so
+# this file deliberately does NOT exclude it.
+
+# .NET build artifacts
+**/bin/
+**/obj/
+**/.vs/
+
+# Node artefacts (not used by the .NET unit tests)
+src/ui/node_modules/
+src/ui/dist/
+
+# VCS
+.git/
+.gitignore
+
+# Editor / OS
+.DS_Store
+**/.idea/
+**/*.user

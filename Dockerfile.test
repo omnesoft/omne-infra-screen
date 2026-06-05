@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+# Build context: repo root
+#
+# Runs the xUnit unit tests (test/Api.Tests) in a clean, pinned toolchain.
+# These tests use EF Core InMemory, so no PostgreSQL / running stack is needed.
+#
+#   docker build -f Dockerfile.test .
+#
+# The build *fails* if any test fails (dotnet test's non-zero exit aborts the
+# RUN). To extract the TRX report, build the `export` stage to a local dir:
+#
+#   docker build -f Dockerfile.test --target export --output type=local,dest=TestResults .
+
+# ── restore ────────────────────────────────────────────────────────────────────
+# Copy only the manifests first so the restore layer stays cache-stable across
+# source-only changes. Restoring the test project pulls in its Api.csproj
+# project reference as well. Same pinned SDK digest as src/Api/Dockerfile.
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:c0790639332692a0d56cdd81ed581cfd24d040d9839764c138994866df89a3b6 AS restore
+WORKDIR /src
+COPY nuget.config Directory.Build.props Directory.Packages.props ./
+COPY src/Api/Api.csproj src/Api/
+COPY test/Api.Tests/Api.Tests.csproj test/Api.Tests/
+RUN dotnet restore test/Api.Tests/Api.Tests.csproj
+
+# ── test ───────────────────────────────────────────────────────────────────────
+FROM restore AS test
+COPY src/Api/ src/Api/
+COPY test/Api.Tests/ test/Api.Tests/
+RUN dotnet test test/Api.Tests/Api.Tests.csproj \
+        -c Release \
+        --no-restore \
+        --logger "trx;LogFileName=test-results.trx" \
+        --results-directory /TestResults
+
+# ── export ─────────────────────────────────────────────────────────────────────
+# Scratch stage holding just the TRX report, so `--target export --output`
+# writes it to the host without copying anything else.
+FROM scratch AS export
+COPY --from=test /TestResults/ ./
