@@ -2,17 +2,19 @@
 
 ## Run it
 
+Copy the example env file and set your Postgres credentials:
+
+```bash
+cp .env.example .env   # edit POSTGRES_PASSWORD before continuing
+```
+
+Then start the full stack:
+
 ```bash
 docker compose up --build
 ```
 
 Open <http://localhost:8080> — the seeded widgets appear in the browser.
-
-To override the default credentials, copy `.env.example` to `.env` and edit before starting:
-
-```bash
-cp .env.example .env   # then edit POSTGRES_PASSWORD before running compose
-```
 
 To tear everything down, including the database volume:
 
@@ -53,7 +55,7 @@ Expected result:
 - API/BFF use `aspnet:10.0` plus `curl` so the health checks can probe real HTTP endpoints. A chiseled image would be smaller, but would need an extra probe binary.
 - Only the UI is published to the host. API, BFF, and Postgres stay on the internal Docker network.
 - Containers run as non-root users.
-- Database settings are injected from environment variables rather than committed as fixed values in compose.
+- No credentials are hardcoded in compose. All database settings come from a `.env` file (gitignored); `.env.example` provides safe defaults to copy locally.
 - CI is configured to fail on fixable HIGH/CRITICAL vulnerabilities, which gives useful signal but can block the pipeline on base-image or inherited dependency issues.
 
 ## If I had more time
