@@ -135,7 +135,7 @@ jobs:
       - name: Scan API (HIGH/CRITICAL gates)
         id: scan_api
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: omne-api:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.sha }}
           format: json
@@ -147,7 +147,7 @@ jobs:
       - name: Scan BFF (HIGH/CRITICAL gates)
         id: scan_bff
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: omne-bff:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.sha }}
           format: json
@@ -159,7 +159,7 @@ jobs:
       - name: Scan UI (HIGH/CRITICAL gates)
         id: scan_ui
         continue-on-error: true
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: omne-ui:${{ steps.meta.outputs.branch }}-${{ steps.meta.outputs.sha }}
           format: json
