@@ -1,0 +1,18 @@
+# VCS / CI
+.git/
+.github/
+
+# Editors
+.vs/
+.vscode/
+**/*.user
+
+# Build outputs (restored/built fresh inside the image)
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/TestResults/
+
+# OS cruft
+**/.DS_Store
