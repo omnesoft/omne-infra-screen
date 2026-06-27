@@ -7,6 +7,26 @@ containerization and CI/CD rather than on writing application code.
 > Read the exercise brief in [`BRIEF.md`](./BRIEF.md) for the full task and what we
 > score. This README only describes the code you've been given.
 
+## Submission notes
+
+Local run/test instructions and trade-offs for this submission are in
+[`SOLUTION.md`](./SOLUTION.md).
+
+Quick start:
+
+```powershell
+Copy-Item .env.example .env
+# set POSTGRES_PASSWORD in .env
+docker compose up --build
+```
+
+Then open <http://localhost:8080> and verify:
+
+```powershell
+curl http://localhost:8080/healthz
+curl http://localhost:8080/api/widgets
+```
+
 ## What's here
 
 ```
@@ -54,7 +74,7 @@ dotnet test  Omne.Screen.sln -c Release
 Run the API against a local Postgres (the API listens on `http://localhost:5080`):
 
 ```bash
-ConnectionStrings__OmneScreen="Host=localhost;Port=5432;Database=omne_screen;Username=postgres;Password=postgres" \
+ConnectionStrings__OmneScreen="Host=localhost;Port=5432;Database=omne_screen;Username=<db-user>;Password=<db-password>" \
   dotnet run --project src/Api
 # then: curl localhost:5080/health
 ```

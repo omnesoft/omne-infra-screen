@@ -8,7 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Connection string comes from config/env: ConnectionStrings__OmneScreen.
 // Never hard-code credentials — the compose file / secret store supplies this.
 var connectionString = builder.Configuration.GetConnectionString("OmneScreen")
-    ?? "Host=localhost;Port=5432;Database=omne_screen;Username=postgres;Password=postgres";
+    ?? throw new InvalidOperationException("ConnectionStrings__OmneScreen must be configured.");
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 

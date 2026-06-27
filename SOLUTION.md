@@ -6,7 +6,13 @@
 docker compose up --build
 ```
 
-Open <http://localhost:8080>. The UI is served by nginx and reaches the API through the BFF.
+Open <http://localhost:8080> — the seeded widgets appear in the browser.
+
+To override the default credentials, copy `.env.example` to `.env` and edit before starting:
+
+```bash
+cp .env.example .env   # then edit POSTGRES_PASSWORD before running compose
+```
 
 To tear everything down, including the database volume:
 
@@ -14,13 +20,27 @@ To tear everything down, including the database volume:
 docker compose down -v
 ```
 
-## Test it
+## Test it locally
+
+Backend unit tests:
 
 ```bash
 dotnet test Omne.Screen.sln -c Release
 ```
 
-The unit tests use EF Core InMemory, so they do not require Postgres.
+Full stack smoke check:
+
+```bash
+docker compose ps
+curl http://localhost:8080/healthz
+curl http://localhost:8080/api/widgets
+curl http://localhost:8080/api/widgets/stats
+```
+
+Expected result:
+- `docker compose ps` shows all services healthy
+- `/healthz` returns `ok`
+- `/api/widgets` returns the seeded widgets
 
 ## What was added
 
@@ -33,8 +53,8 @@ The unit tests use EF Core InMemory, so they do not require Postgres.
 - API/BFF use `aspnet:10.0` plus `curl` so the health checks can probe real HTTP endpoints. A chiseled image would be smaller, but would need an extra probe binary.
 - Only the UI is published to the host. API, BFF, and Postgres stay on the internal Docker network.
 - Containers run as non-root users.
-- Local database settings are injected via environment variables with defaults for one-command bring-up. In a production setup, credentials would come from a proper secret source.
-- CI is configured to fail on fixable HIGH/CRITICAL vulnerabilities, which is useful signal but can block the pipeline on dependency issues inherited from the starter repo.
+- Database settings are injected from environment variables rather than committed as fixed values in compose.
+- CI is configured to fail on fixable HIGH/CRITICAL vulnerabilities, which gives useful signal but can block the pipeline on base-image or inherited dependency issues.
 
 ## If I had more time
 
